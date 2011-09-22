@@ -1,0 +1,107 @@
+(in-package :common-lisp-user)
+
+(defpackage wal-tests
+  (:use :cl :lisp-unit))
+
+(in-package :wal-tests)
+
+(define-test wal-pathname
+  (assert-equal #P"/tmp/foo.wal" (wal::wal-pathname "/tmp/foo.db")))
+
+(define-test open-wal-stream
+  (let ((stream (wal::open-wal-stream (binary-file:make-binary-array-io-stream) :error :create)))
+    (assert-typep 'binary-file:binary-array-io-stream stream))
+  (with-open-stream (stream (wal::open-wal-stream "/tmp/wal-test-master.db" :overwrite :create))
+    ;;(assert-typep stream 'stream) ; for some reason this fails?
+    (assert-equal #P"/tmp/wal-test-master.wal" (pathname stream))
+    (delete-file stream)))
+
+(define-test open/close
+  (let ((wal (wal:open "/tmp/wal-test-master.db" #'prin1 :if-does-not-exist :create)))
+    (assert-typep 'wal::wal wal)
+    ;;(assert-typep (wal-stream wal) 'stream)
+    (assert-equal #'prin1 (wal::wal-writer wal))
+    (assert-equal "/tmp/wal-test-master.db" (wal::wal-master wal))
+    (assert-false (wal::wal-entries wal))
+    (wal:close wal)
+    (assert-false (open-stream-p (wal::wal-stream wal)))
+    (delete-file (wal::wal-stream wal))))
+  
+(define-test write
+  (let ((wal (wal:open (binary-file:make-binary-array-io-stream) #'prin1)))
+    (wal:write wal 'foo)
+    (assert-equalp '(foo) (wal::wal-entries wal))
+    (wal:write wal 'bar)
+    (assert-equalp '(bar foo) (wal::wal-entries wal))
+    (file-position (wal::wal-stream wal) :start)
+    (assert-eql 'foo (read (wal::wal-stream wal) nil nil))
+    (assert-eql 'bar (read (wal::wal-stream wal) nil nil))
+    (assert-false (read (wal::wal-stream wal) nil nil))))
+
+(define-test commit
+  (with-open-file (master "/tmp/wal-test-master.db" :direction :io :if-exists :overwrite :if-does-not-exist :create)
+    (let ((wal (wal:open master #'(lambda (entry) (print entry master))  :if-does-not-exist :create)))
+      (wal:write wal 'foo)
+      (wal:write wal 'bar)
+      (wal:commit wal)
+      (file-position master 0)
+      (assert-eql 'foo (read master nil nil))
+      (assert-eql 'bar (read master nil nil))
+      (assert-false (read master nil nil))
+      (assert-false (wal::wal-entries wal))
+      (assert-eql 0 (file-position (wal::wal-stream wal)))
+      (assert-false (read (wal::wal-stream wal) nil nil)))
+    (delete-file master)))
+      
+(define-test rollback
+  (with-open-file (master "/tmp/wal-test-master.db" :direction :io :if-exists :overwrite :if-does-not-exist :create)
+    (let ((wal (wal:open master #'(lambda (entry) (print entry master))  :if-does-not-exist :create)))
+      (wal:write wal 'foo)
+      (wal:write wal 'bar)
+      (wal:rollback wal)
+      (assert-eql 0 (file-length master))
+    (delete-file master))))
+  
+(define-test recover
+  (with-open-file (master "/tmp/wal-test-master.db" :direction :io :if-exists :overwrite :if-does-not-exist :create)
+    (let ((wal (wal:open master #'(lambda (entry) (print entry master))  :if-does-not-exist :create)))
+      (wal:write wal 'foo)
+      (wal:write wal 'bar)
+      (print :commit (wal::wal-stream wal))
+      (finish-output (wal::wal-stream wal))
+      (cl:close (wal::wal-stream wal))
+      (setq wal (wal:open master #'(lambda (entry) (print entry master)) :if-exists :overwrite :if-does-not-exist :error))
+      (wal:recover wal)
+      (file-position master 0)
+      (assert-eql 'foo (read master nil nil))
+      (assert-eql 'bar (read master nil nil))
+      (assert-false (read master nil nil))
+      (assert-false (wal::wal-entries wal))
+      (assert-eql 0 (file-position (wal::wal-stream wal)))
+      (assert-false (read (wal::wal-stream wal) nil nil)))
+    (delete-file master))
+  (with-open-file (master "/tmp/wal-test-master.db" :direction :io :if-exists :overwrite :if-does-not-exist :create)
+    (let ((wal (wal:open master #'(lambda (entry) (print entry master))  :if-does-not-exist :create)))
+      (wal:write wal 'foo)
+      (wal:write wal 'bar)
+      (finish-output (wal::wal-stream wal))
+      (cl:close (wal::wal-stream wal))
+      (setq wal (wal:open master #'(lambda (entry) (print entry master)) :if-exists :overwrite :if-does-not-exist :error))
+      (wal:recover wal)
+      (assert-eql 0 (file-length master))
+      (assert-false (wal::wal-entries wal))
+      (assert-eql 0 (file-position (wal::wal-stream wal)))
+      (assert-false (read (wal::wal-stream wal) nil nil)))
+    (delete-file master))
+  (with-open-file (master "/tmp/wal-test-master.db" :direction :io :if-exists :overwrite :if-does-not-exist :create)
+    (let ((wal (wal:open master #'(lambda (entry) (print entry master))  :if-does-not-exist :create)))
+      (cl:close (wal::wal-stream wal))
+      (setq wal (wal:open master #'(lambda (entry) (print entry master)) :if-exists :overwrite :if-does-not-exist :error))
+      (wal:recover wal)
+      (assert-eql 0 (file-length master))
+      (assert-false (wal::wal-entries wal))
+      (assert-eql 0 (file-position (wal::wal-stream wal)))
+      (assert-false (read (wal::wal-stream wal) nil nil)))
+    (delete-file master)))
+
+

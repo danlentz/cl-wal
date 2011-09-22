@@ -1,0 +1,29 @@
+2011-01-06 08:55  sami-makinen
+
+	* cl-wal-trunk.asd, package.lisp, test/unit/wal.lisp, vendor,
+	  vendor/lisp-unit.lisp: Refactored wal to use lisp-unit by
+	  Christopher K. Riesbeck.
+	  Note: vendor dir contains slightly modified lisp-unit (with
+	  assert-typep).
+	  Unit tests were refactored with following modifications:
+	  - def-test (name) -> define-test name
+	  - assert-typep obj type -> assert-typep type obj
+	  - assert-condition error -> assert-error 'error
+	  - unit tests are in their own package
+	  - all symbols need to have package specification
+
+2011-01-01 19:54  sami-makinen
+
+	* cl-wal-trunk.asd, wal.asd: Renamed asd file to follow project
+	  name and svn version.
+
+2011-01-01 19:53  sami-makinen
+
+	* package.lisp, wal.asd: Updated system and package to follow
+	  project name and version.
+
+2010-12-01 16:50  sami-makinen
+
+	* ., package.lisp, test, test/unit, test/unit/wal.lisp, wal.asd,
+	  wal.lisp: Initial import.
+
